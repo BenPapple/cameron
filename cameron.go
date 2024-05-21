@@ -17,7 +17,7 @@ var r = flag.Int("r", 5, "set requests per second")
 
 var maxRequests int
 var isVerbose bool
-var wordlist string
+var wordlistFile string
 
 //
 func main() {
@@ -25,6 +25,20 @@ func main() {
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, *r)
 	var startTimer time.Time
+	wordlist := []string{
+		"/graphql",
+		"/v1/graphql",
+		"/v2/graphql",
+		"/v3/graphql",
+		"/graphiql",
+		"/v1/graphiql",
+		"/v2/graphiql",
+		"/v3/graphiql",
+		"/playground",
+		"/v1/playground",
+		"/v2/playground",
+		"/v3/playground",
+	}
 
 	if isVerbose {
 		startTimer = time.Now()
@@ -37,9 +51,9 @@ func main() {
 	}
 
 	// Fuzz scan
-	for i := 1; i <= 10; i++ {
+	for _, targetWord := range wordlist {
 		wg.Add(1)
-		go fuzz(wordlist, target, &wg, &tokens)
+		go fuzz(wordlist, target, targetWord, &wg, &tokens)
 	}
 	wg.Wait()
 
@@ -54,10 +68,11 @@ func main() {
 }
 
 //
-func fuzz(wordlist string, target string, wg *sync.WaitGroup, tokens *chan struct{}) {
+func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}) {
 	defer wg.Done()
 	*tokens <- struct{}{}
-	fmt.Println("Scanning")
+	targetCombined := fmt.Sprintf("%s%s", target, targetWord)
+	fmt.Println("Scanning", targetCombined)
 	time.Sleep(1 * time.Second)
 	<-*tokens
 }
@@ -67,7 +82,7 @@ func init() {
 	flag.Parse()
 
 	if *l != "" {
-		wordlist = *l
+		wordlistFile = *l
 	}
 
 	if *r > 0 {
