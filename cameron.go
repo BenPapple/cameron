@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 )
@@ -43,6 +44,7 @@ func main() {
 	wordlistFile = *l
 	filterCode := *fc
 	matchCode := *mc
+	var progressCounter uint64
 
 	if isVerbose {
 		startTimer = time.Now()
@@ -63,11 +65,15 @@ func main() {
 		Timeout: 10 * time.Second,
 	}
 
+	// Progress tests
+	go progressBar(wlFile, &progressCounter)
+
 	// Fuzz scan
 	for _, targetWord := range wlFile {
 		wg.Add(1)
-		go fuzz(wlFile, host, targetWord, &wg, &tokens, client, &scanResults)
+		go fuzz(wlFile, host, targetWord, &wg, &tokens, client, &scanResults, &progressCounter)
 	}
+
 	wg.Wait()
 
 	printResults(scanResults, host, filterCode, matchCode)
@@ -83,7 +89,7 @@ func main() {
 }
 
 // Fuzz a URL with words from wordlist
-func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}, client *http.Client, scanResults *sync.Map) {
+func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}, client *http.Client, scanResults *sync.Map, progressCounter *uint64) {
 	defer wg.Done()
 	*tokens <- struct{}{}
 
@@ -114,8 +120,27 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	// Store results from response body
 	respData := [4]int{resp.StatusCode, responseSize, wordCount, lineCount}
 	scanResults.Store(targetCombined, respData)
+	atomic.AddUint64(progressCounter, 1)
 	time.Sleep(1 * time.Second)
 	<-*tokens
+}
+
+// Progress bar
+func progressBar(wlFile []string, progressCounter *uint64) {
+	var count uint64
+	count = 1
+
+	for int(count) <= len(wlFile) {
+		count = atomic.LoadUint64(progressCounter)
+		fmt.Printf("\033[2J\033[0;0HProgress: %d %s %d %s", count, "of", len(wlFile), "targets done.")
+		if int(count) == len(wlFile) {
+			fmt.Print("\n\n")
+			time.Sleep(1000 * time.Millisecond)
+		} else {
+			time.Sleep(40 * time.Millisecond)
+		}
+	}
+
 }
 
 // Read wordlist from file
@@ -184,19 +209,24 @@ func printResults(scanResults sync.Map, host string, filterCode string, matchCod
 		trimmedHost := strings.TrimSuffix(host, "/FUZZ")
 		trimmedHost = strings.TrimPrefix(k, trimmedHost)
 
+		// not in filter and in match
 		if !strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
 		}
+		// empty and in match
 		if filterCode == "" && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
 		}
-		if !strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && matchCode == "" {
+		// in filter and empty
+		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && matchCode == "" {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
 		}
+		// both empty
 		if filterCode == "" && matchCode == "" {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
 		}
-		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
+		// both the same
+		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) && matchCode != "" {
 			fmt.Println("Error: Can't match and filter the same code.")
 			os.Exit(0)
 		}
