@@ -23,13 +23,14 @@ var t = flag.String("t", "localhost", "set target IP/URL")
 var l = flag.String("l", "localhost", "input wordlist")
 var v = flag.Bool("v", false, "enable verbose output")
 var r = flag.Int("r", 5, "set requests per second")
+var fc = flag.Int("fc", 5, "filter status code")
 
 var maxRequests int
 var isVerbose bool
 
 var wordlistFile string
 
-//
+// Start fuzzing
 func main() {
 	var host string = ""
 	var targetIP string = ""
@@ -38,6 +39,7 @@ func main() {
 	var startTimer time.Time
 	var scanResults sync.Map
 	wordlistFile = *l
+	filterCode := *fc
 
 	if isVerbose {
 		startTimer = time.Now()
@@ -65,7 +67,7 @@ func main() {
 	}
 	wg.Wait()
 
-	printResults(scanResults, host)
+	printResults(scanResults, host, filterCode)
 
 	// Time program execution
 	stopTimer := time.Now()
@@ -113,7 +115,7 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	<-*tokens
 }
 
-//
+// Read wordlist from file
 func getFile(wordlistFile string) []string {
 	list := []string{}
 
@@ -159,7 +161,7 @@ func replaceFUZZ(host string, fuzz string) string {
 }
 
 // Pretty print results in table
-func printResults(scanResults sync.Map, host string) {
+func printResults(scanResults sync.Map, host string, filterCode int) {
 
 	tempMap := map[string][4]int{}
 	scanResults.Range(func(key, value interface{}) bool {
@@ -178,35 +180,9 @@ func printResults(scanResults sync.Map, host string) {
 
 		trimmedHost := strings.TrimSuffix(host, "/FUZZ")
 		trimmedHost = strings.TrimPrefix(k, trimmedHost)
-		fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
-
-	}
-}
-
-// Set initial values from flags and other values
-func init() {
-	flag.Parse()
-
-	if *l != "" {
-		wordlistFile = *l
-	}
-
-	if *r > 0 {
-		maxRequests = *r
-	} else {
-		// Default on negative input
-		maxRequests = 5
-	}
-
-	if *v {
-		isVerbose = true
-		fmt.Println("Cameron is in a talkative mood right now")
-	} else {
-		isVerbose = false
-	}
-
-	if isVerbose {
-		fmt.Println("Requests per second: ", maxRequests)
+		if tempMap[k][0] != filterCode {
+			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
+		}
 	}
 }
 
@@ -267,6 +243,41 @@ func getIP(host string) string {
 	}
 	return tempIP
 
+}
+
+// Set initial values from flags and other values
+func init() {
+	flag.Parse()
+
+	if *l != "" {
+		wordlistFile = *l
+	}
+
+	if *r > 0 {
+		maxRequests = *r
+	} else {
+		// Default on negative input
+		maxRequests = 5
+	}
+
+	if *v {
+		isVerbose = true
+		fmt.Println("Cameron is in a talkative mood right now")
+	} else {
+		isVerbose = false
+	}
+
+	// http status code
+	if *fc > 99 && *fc < 600 {
+
+	} else {
+		fmt.Println("Error: HTTP status code invalid")
+		os.Exit(0)
+	}
+
+	if isVerbose {
+		fmt.Println("Requests per second: ", maxRequests)
+	}
 }
 
 // Print header when no arguments in CLI or on error
