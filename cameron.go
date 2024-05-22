@@ -2,15 +2,19 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Flags
@@ -31,21 +35,22 @@ func main() {
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, *r)
 	var startTimer time.Time
-	var scanResults = map[string]int{}
+	var scanResults sync.Map
 	wordlistFile = *l
 	wordlist := []string{
-		"/graphql",
-		// "/v1/graphql",
-		// "/v2/graphql",
-		// "/v3/graphql",
-		// "/graphiql",
-		// "/v1/graphiql",
-		// "/v2/graphiql",
-		// "/v3/graphiql",
-		// "/playground",
-		// "/v1/playground",
-		// "/v2/playground",
-		// "/v3/playground",
+		"api",
+		"graphql",
+		"v1/graphql",
+		"v2/graphql",
+		"v3/graphql",
+		"graphiql",
+		"v1/graphiql",
+		"v2/graphiql",
+		"v3/graphiql",
+		"playground",
+		"v1/playground",
+		"v2/playground",
+		"v3/playground",
 	}
 
 	if isVerbose {
@@ -67,11 +72,11 @@ func main() {
 	// Fuzz scan
 	for _, targetWord := range wordlist {
 		wg.Add(1)
-		go fuzz(wordlist, host, targetWord, &wg, &tokens, client, scanResults)
+		go fuzz(wordlist, host, targetWord, &wg, &tokens, client, &scanResults)
 	}
 	wg.Wait()
 
-	printResults(scanResults)
+	printResults(scanResults, host)
 
 	// Time program execution
 	stopTimer := time.Now()
@@ -84,13 +89,12 @@ func main() {
 }
 
 //
-func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}, client *http.Client, scanResults map[string]int) {
+func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}, client *http.Client, scanResults *sync.Map) {
 	defer wg.Done()
 	*tokens <- struct{}{}
 
 	// Fuzzing
-	targetCombined := fmt.Sprintf("%s%s", target, targetWord)
-	fmt.Println("Scanning", targetCombined)
+	targetCombined := replaceFUZZ(target, targetWord)
 	resp, err := client.Get(targetCombined)
 	if err != nil {
 		fmt.Printf("Error fetching URL %s: %s", targetCombined, err)
@@ -98,25 +102,73 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	}
 	defer resp.Body.Close()
 
-	scanResults[targetCombined] = resp.StatusCode
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Error reading response body:", err)
+		return
+	}
+
+	// Get the size of the response body in bytes
+	responseSize := len(body)
+
+	// Create a scanner to read the response body line by line
+	scanner := bufio.NewScanner(resp.Body)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println("Error reading response body:", err)
+		return
+	}
+
+	// Count the number of words in the response body
+	wordCount := countWords(string(body))
+
+	// Store results from response body
+	respData := [4]int{resp.StatusCode, responseSize, wordCount, lineCount}
+	scanResults.Store(targetCombined, respData)
 	time.Sleep(1 * time.Second)
 	<-*tokens
 }
 
+// Count the words in a string
+func countWords(text string) int {
+	words := strings.FieldsFunc(text, func(c rune) bool {
+		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
+	})
+	return len(words)
+}
+
+//
+func replaceFUZZ(host string, fuzz string) string {
+	out := strings.Replace(host, "FUZZ", fuzz, 1)
+	return out
+}
+
 // Pretty print results in table
-func printResults(scanResults map[string]int) {
+func printResults(scanResults sync.Map, host string) {
+
+	tempMap := map[string][4]int{}
+	scanResults.Range(func(key, value interface{}) bool {
+		tempMap[fmt.Sprint(key)] = value.([4]int)
+		return true
+	})
 
 	// Sort map by string and print
-	fmt.Printf("%-30v %v\n", "HOST", "HTTP Status")
+	fmt.Printf("%-20v %-6v  %-4v  %-5v  %-5v\n", "HOST", "Status", "Size", "Words", "Lines")
 	keys := make([]string, 0)
-	for k := range scanResults {
+	for k := range tempMap {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if scanResults[k] > 0 {
-			fmt.Printf("%-30s %-4d \n", k, scanResults[k])
-		}
+
+		trimmedHost := strings.TrimSuffix(host, "/FUZZ")
+		trimmedHost = strings.TrimPrefix(k, trimmedHost)
+		fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
+
 	}
 }
 
