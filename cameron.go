@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -38,6 +37,7 @@ func main() {
 	var scanResults sync.Map
 	wordlistFile = *l
 	wordlist := []string{
+		"test.html",
 		"api",
 		"graphql",
 		"v1/graphql",
@@ -111,17 +111,8 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	// Get the size of the response body in bytes
 	responseSize := len(body)
 
-	// Create a scanner to read the response body line by line
-	scanner := bufio.NewScanner(resp.Body)
-	lineCount := 0
-	for scanner.Scan() {
-		lineCount++
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Println("Error reading response body:", err)
-		return
-	}
+	// Count the number of lines in the response body
+	lineCount := countLines(string(body))
 
 	// Count the number of words in the response body
 	wordCount := countWords(string(body))
@@ -133,6 +124,15 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	<-*tokens
 }
 
+// Count the lines in a string
+func countLines(s string) int {
+	n := strings.Count(s, "\n")
+	if !strings.HasSuffix(s, "\n") {
+		n++
+	}
+	return n
+}
+
 // Count the words in a string
 func countWords(text string) int {
 	words := strings.FieldsFunc(text, func(c rune) bool {
@@ -141,7 +141,7 @@ func countWords(text string) int {
 	return len(words)
 }
 
-//
+// Replace FUZZ with word from wordlist
 func replaceFUZZ(host string, fuzz string) string {
 	out := strings.Replace(host, "FUZZ", fuzz, 1)
 	return out
