@@ -2,9 +2,11 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -36,22 +38,6 @@ func main() {
 	var startTimer time.Time
 	var scanResults sync.Map
 	wordlistFile = *l
-	wordlist := []string{
-		"test.html",
-		"api",
-		"graphql",
-		"v1/graphql",
-		"v2/graphql",
-		"v3/graphql",
-		"graphiql",
-		"v1/graphiql",
-		"v2/graphiql",
-		"v3/graphiql",
-		"playground",
-		"v1/playground",
-		"v2/playground",
-		"v3/playground",
-	}
 
 	if isVerbose {
 		startTimer = time.Now()
@@ -64,15 +50,18 @@ func main() {
 	}
 	targetCheck(&host, &targetIP)
 
+	// Read file
+	wlFile := getFile(wordlistFile)
+
 	// Client
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
 	// Fuzz scan
-	for _, targetWord := range wordlist {
+	for _, targetWord := range wlFile {
 		wg.Add(1)
-		go fuzz(wordlist, host, targetWord, &wg, &tokens, client, &scanResults)
+		go fuzz(wlFile, host, targetWord, &wg, &tokens, client, &scanResults)
 	}
 	wg.Wait()
 
@@ -88,7 +77,7 @@ func main() {
 
 }
 
-//
+// Fuzz a URL with words from wordlist
 func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGroup, tokens *chan struct{}, client *http.Client, scanResults *sync.Map) {
 	defer wg.Done()
 	*tokens <- struct{}{}
@@ -122,6 +111,28 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	scanResults.Store(targetCombined, respData)
 	time.Sleep(1 * time.Second)
 	<-*tokens
+}
+
+//
+func getFile(wordlistFile string) []string {
+	list := []string{}
+
+	file, err := os.Open(wordlistFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		list = append(list, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	return list
 }
 
 // Count the lines in a string
