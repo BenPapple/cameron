@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,8 @@ var t = flag.String("t", "localhost", "set target IP/URL")
 var l = flag.String("l", "localhost", "input wordlist")
 var v = flag.Bool("v", false, "enable verbose output")
 var r = flag.Int("r", 5, "set requests per second")
-var fc = flag.Int("fc", 5, "filter status code")
+var fc = flag.String("fc", "", "filter status code")
+var mc = flag.String("mc", "", "match status code")
 
 var maxRequests int
 var isVerbose bool
@@ -40,6 +42,7 @@ func main() {
 	var scanResults sync.Map
 	wordlistFile = *l
 	filterCode := *fc
+	matchCode := *mc
 
 	if isVerbose {
 		startTimer = time.Now()
@@ -67,7 +70,7 @@ func main() {
 	}
 	wg.Wait()
 
-	printResults(scanResults, host, filterCode)
+	printResults(scanResults, host, filterCode, matchCode)
 
 	// Time program execution
 	stopTimer := time.Now()
@@ -161,7 +164,7 @@ func replaceFUZZ(host string, fuzz string) string {
 }
 
 // Pretty print results in table
-func printResults(scanResults sync.Map, host string, filterCode int) {
+func printResults(scanResults sync.Map, host string, filterCode string, matchCode string) {
 
 	tempMap := map[string][4]int{}
 	scanResults.Range(func(key, value interface{}) bool {
@@ -180,9 +183,24 @@ func printResults(scanResults sync.Map, host string, filterCode int) {
 
 		trimmedHost := strings.TrimSuffix(host, "/FUZZ")
 		trimmedHost = strings.TrimPrefix(k, trimmedHost)
-		if tempMap[k][0] != filterCode {
+
+		if !strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
 		}
+		if filterCode == "" && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
+			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
+		}
+		if !strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && matchCode == "" {
+			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
+		}
+		if filterCode == "" && matchCode == "" {
+			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
+		}
+		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
+			fmt.Println("Error: Can't match and filter the same code.")
+			os.Exit(0)
+		}
+
 	}
 }
 
@@ -268,12 +286,12 @@ func init() {
 	}
 
 	// http status code
-	if *fc > 99 && *fc < 600 {
+	// if *fc > 99 && *fc < 600 {
 
-	} else {
-		fmt.Println("Error: HTTP status code invalid")
-		os.Exit(0)
-	}
+	// } else {
+	// 	fmt.Println("Error: HTTP status code invalid")
+	// 	os.Exit(0)
+	// }
 
 	if isVerbose {
 		fmt.Println("Requests per second: ", maxRequests)
