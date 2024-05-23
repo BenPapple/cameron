@@ -36,7 +36,6 @@ var wordlistFile string
 // Start fuzzing
 func main() {
 	var host string = ""
-	var targetIP string = ""
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, *r)
 	var startTimer time.Time
@@ -55,7 +54,7 @@ func main() {
 		prHeader()
 		os.Exit(0)
 	}
-	targetCheck(&host, &targetIP)
+	targetCheck(&host)
 
 	// Read file
 	wlFile := getFile(wordlistFile)
@@ -66,7 +65,9 @@ func main() {
 	}
 
 	// Progress tests
-	go progressBar(wlFile, &progressCounter)
+	if !isVerbose {
+		go progressBar(wlFile, &progressCounter)
+	}
 
 	// Fuzz scan
 	for _, targetWord := range wlFile {
@@ -97,14 +98,18 @@ func fuzz(wordlist []string, target string, targetWord string, wg *sync.WaitGrou
 	targetCombined := replaceFUZZ(target, targetWord)
 	resp, err := client.Get(targetCombined)
 	if err != nil {
-		fmt.Printf("Error fetching URL %s: %s", targetCombined, err)
+		fmt.Printf("\nError fetching URL %s: %s", targetCombined, err)
+		atomic.AddUint64(progressCounter, 1)
+		<-*tokens
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error reading response body:", err)
+		fmt.Println("\nError reading response body:", err)
+		atomic.AddUint64(progressCounter, 1)
+		<-*tokens
 		return
 	}
 
@@ -235,22 +240,27 @@ func printResults(scanResults sync.Map, host string, filterCode string, matchCod
 }
 
 // Check if user input for target is valid IP or URI
-func targetCheck(host *string, targetIP *string) {
+func targetCheck(host *string) {
+
+	// Check for FUZZ keyword
+	if !strings.Contains(*t, "FUZZ") {
+		fmt.Println("Error: Input is missing FUZZ keyword.")
+		os.Exit(0)
+	}
 
 	// Check for valid IP in input
 	checkIP := net.ParseIP(*t)
 	if checkIP != nil {
 		*host = *t
-		*targetIP = *t
+		fmt.Println("db: Check IP")
 		return
 	}
 
 	// Check for valid URI in input
 	_, err := url.ParseRequestURI(*t)
 	if err == nil {
-		tempHost := fmt.Sprintf("%s%s", "http://", *t)
-		*host = tempHost
-		*targetIP = getIP(*host)
+		*host = *t
+		fmt.Println("db: URI")
 		return
 	}
 
@@ -258,7 +268,7 @@ func targetCheck(host *string, targetIP *string) {
 	if *t == "localhost" {
 		tempHost := fmt.Sprintf("%s%s", "http://", *t)
 		*host = tempHost
-		*targetIP = getIP(*host)
+		fmt.Println("db: localhost")
 		return
 	}
 
@@ -267,7 +277,7 @@ func targetCheck(host *string, targetIP *string) {
 	_, err2 := url.ParseRequestURI(tempHost)
 	if err2 == nil {
 		*host = tempHost
-		*targetIP = getIP(*host)
+		fmt.Println("db: add http then check URI")
 		return
 	}
 
@@ -276,20 +286,6 @@ func targetCheck(host *string, targetIP *string) {
 	fmt.Println("Error: No valid IP or URI given")
 	fmt.Println("Error on input target candidate: ", *t)
 	os.Exit(0)
-
-}
-
-// Return IPv4 from URL
-func getIP(host string) string {
-	ips, _ := net.LookupIP(host)
-	var tempIP string
-	for _, ip := range ips {
-		if ipv4 := ip.To4(); ipv4 != nil {
-			tempIP = fmt.Sprintf("%v", ipv4)
-
-		}
-	}
-	return tempIP
 
 }
 
@@ -314,14 +310,6 @@ func init() {
 	} else {
 		isVerbose = false
 	}
-
-	// http status code
-	// if *fc > 99 && *fc < 600 {
-
-	// } else {
-	// 	fmt.Println("Error: HTTP status code invalid")
-	// 	os.Exit(0)
-	// }
 
 	if isVerbose {
 		fmt.Println("Requests per second: ", maxRequests)
