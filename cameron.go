@@ -22,7 +22,7 @@ import (
 
 // Flags
 var t = flag.String("t", "localhost", "set target IP/URL")
-var l = flag.String("l", "localhost", "input wordlist")
+var l = flag.String("l", "", "input wordlist")
 var v = flag.Bool("v", false, "enable verbose output")
 var r = flag.Int("r", 5, "set requests per second")
 var fc = flag.String("fc", "", "filter status code")
@@ -49,9 +49,20 @@ func main() {
 		startTimer = time.Now()
 	}
 
-	// Check for empty argument list and then validate target input
+	// Debug
+	//fmt.Println("l:", *l)
+
+	// Check argument list for valid values and then validate target input
 	if len(os.Args) <= 1 {
 		prHeader()
+		os.Exit(0)
+	}
+	if *l == "" {
+		fmt.Println("Error: No wordlist. Use -l wordlistname.txt")
+		os.Exit(0)
+	}
+	if _, err := os.Stat(wordlistFile); err != nil {
+		fmt.Println("Error: Wordlist file path not valid.")
 		os.Exit(0)
 	}
 	targetCheck(&host)
