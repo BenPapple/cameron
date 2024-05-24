@@ -49,28 +49,15 @@ func main() {
 		startTimer = time.Now()
 	}
 
-	// Debug
+	// Temporary Debugs
 	//fmt.Println("l:", *l)
 
-	// Check argument list for valid values and then validate target input
-	if len(os.Args) <= 1 {
-		prHeader()
-		os.Exit(0)
-	}
-	if *l == "" {
-		fmt.Println("Error: No wordlist. Use -l wordlistname.txt")
-		os.Exit(0)
-	}
-	if _, err := os.Stat(wordlistFile); err != nil {
-		fmt.Println("Error: Wordlist file path not valid.")
-		os.Exit(0)
-	}
-	targetCheck(&host)
+	// Validate args input
+	checkArgs(&host)
 
-	// Read file
+	// Read wordlist file
 	wlFile := getFile(wordlistFile)
 
-	// Client
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -225,33 +212,57 @@ func printResults(scanResults sync.Map, host string, filterCode string, matchCod
 		trimmedHost := strings.TrimSuffix(host, "/FUZZ")
 		trimmedHost = strings.TrimPrefix(k, trimmedHost)
 
-		// not in filter and in match
-		if !strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
+		isPrint := checkFilters(filterCode, k, tempMap, matchCode, trimmedHost)
+
+		if isPrint {
 			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
-		}
-		// empty and in match
-		if filterCode == "" && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) {
-			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
-		}
-		// in filter and empty
-		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && matchCode == "" {
-			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
-		}
-		// both empty
-		if filterCode == "" && matchCode == "" {
-			fmt.Printf("%-20s %-6d  %-4d  %-5d  %-5d \n", trimmedHost, tempMap[k][0], tempMap[k][1], tempMap[k][2], tempMap[k][3])
-		}
-		// both the same
-		if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) && matchCode != "" {
-			fmt.Println("Error: Can't match and filter the same code.")
-			os.Exit(0)
 		}
 
 	}
 }
 
+// Check args filters and return true if not filtered
+func checkFilters(filterCode string, k string, tempMap map[string][4]int, matchCode string, trimmedHost string) bool {
+	checked := true
+
+	// not in filter and in match
+	if strings.Contains(filterCode, strconv.Itoa(tempMap[k][0])) && filterCode != "" {
+		checked = false
+	}
+
+	// not in filter and in match
+	if !strings.Contains(matchCode, strconv.Itoa(tempMap[k][0])) && matchCode != "" {
+		checked = false
+	}
+
+	return checked
+}
+
+// Check arguments list for valid values
+func checkArgs(host *string) {
+
+	// No args
+	if len(os.Args) <= 1 {
+		prHeader()
+		os.Exit(0)
+	}
+
+	// Check wordlist
+	if *l == "" {
+		fmt.Println("Error: No wordlist. Use -l wordlistname.txt")
+		os.Exit(0)
+	}
+	if _, err := os.Stat(wordlistFile); err != nil {
+		fmt.Println("Error: Wordlist file path not valid.")
+		os.Exit(0)
+	}
+
+	// Check target
+	checkTarget(host)
+}
+
 // Check if user input for target is valid IP or URI
-func targetCheck(host *string) {
+func checkTarget(host *string) {
 
 	// Check for FUZZ keyword
 	if !strings.Contains(*t, "FUZZ") {
@@ -263,7 +274,7 @@ func targetCheck(host *string) {
 	checkIP := net.ParseIP(*t)
 	if checkIP != nil {
 		*host = *t
-		fmt.Println("db: Check IP")
+		fmt.Println("Target input validated in: Check IP")
 		return
 	}
 
@@ -271,7 +282,7 @@ func targetCheck(host *string) {
 	_, err := url.ParseRequestURI(*t)
 	if err == nil {
 		*host = *t
-		fmt.Println("db: URI")
+		fmt.Println("Target input validated in: URI")
 		return
 	}
 
@@ -279,7 +290,7 @@ func targetCheck(host *string) {
 	if *t == "localhost" {
 		tempHost := fmt.Sprintf("%s%s", "http://", *t)
 		*host = tempHost
-		fmt.Println("db: localhost")
+		fmt.Println("Target input validated in: localhost")
 		return
 	}
 
@@ -288,7 +299,7 @@ func targetCheck(host *string) {
 	_, err2 := url.ParseRequestURI(tempHost)
 	if err2 == nil {
 		*host = tempHost
-		fmt.Println("db: add http then check URI")
+		fmt.Println("Target input validated in: add http then check URI")
 		return
 	}
 
