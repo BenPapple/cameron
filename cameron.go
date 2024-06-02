@@ -351,8 +351,7 @@ func prHeader() {
 	fmt.Println(" ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝")
 	fmt.Println("")
 	fmt.Println("Use -h for help")
-	fmt.Println("Example use case: cameron -t 127.0.0.1")
-	fmt.Println("Example use case: cameron -t localhost")
-	fmt.Println("Example use case: cameron -t URL")
+	fmt.Println("Example use case: go run cameron.go -l ~/yourwordlists.txt -t URL/FUZZ")
+	fmt.Println("Example use case: go run cameron.go -l ~/yourwordlists.txt -t 127.0.0.1/FUZZ")
 	fmt.Println("")
 }
