@@ -1,6 +1,10 @@
 # cameron
 Cameron, a web fuzzer in Go.
 
+Example scan on a web server:
+
+![Scan with gordo on metasploitable2](https://github.com/BenPapple/cameron/blob/main/pics/cameron1.png?raw=true)
+
 # Flags
 -fc "filter status code"
 
